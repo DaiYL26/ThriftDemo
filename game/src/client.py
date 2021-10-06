@@ -9,7 +9,7 @@ from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
 
 
-def main():
+def operate(op, user_id, user_name, score):
     # Make socket
     transport = TSocket.TSocket('localhost', 9090)
 
@@ -25,12 +25,20 @@ def main():
     # Connect!
     transport.open()
 
-    user = User(1, 'dyl', 1500)
+    user = User(user_id, user_name, score)
 
-    client.add_user(user, '')
+    if op == 'add':
+        client.add_user(user, '')
+    elif op == 'remove':
+        client.remove_user(user, '')
 
     # Close!
     transport.close()
+
+def main():
+    for line in sys.stdin:
+        op, user_id, user_name, score = line.split(' ')
+        operate(op, int(user_id), user_name, int(score));
 
 if __name__ == "__main__":
     main()
