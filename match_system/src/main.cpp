@@ -16,6 +16,7 @@
 #include <condition_variable>
 #include <queue>
 #include <vector>
+#include <unistd.h>
 
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
@@ -70,11 +71,32 @@ class Pool
         {
             while (users.size() > 1)
             {
-                auto a = users[0], b = users[1];
-                users.erase(users.begin());
-                users.erase(users.begin());
+                //auto a = users[0], b = users[1];
+                //users.erase(users.begin());
+                //users.erase(users.begin());
 
-                save_result(a.id, b.id);
+                sort(users.begin(), users.end(), [&](User &a, User &b){
+                            return a.score < b.score;
+                        });
+
+                bool flag = false;
+                for (uint32_t i = 0; i < users.size() - 1; i ++)
+                {
+                    auto a = users[i], b = users[i + 1];
+                    if ( b.score - a.score <= 50 )
+                    {
+                        users.erase(users.begin() + i);
+                        users.erase(users.begin() + i);
+
+                        save_result(a.id, b.id);
+
+                        flag = true;
+                        break;
+                    }
+                }
+
+                if (!flag) break;
+
             }
         }
 
@@ -104,7 +126,10 @@ void consume_task()
         std::unique_lock<std::mutex> lck(message_queue.m);
         if (message_queue.q.empty())
         {
-            message_queue.cv.wait(lck);
+            //message_queue.cv.wait(lck);
+            lck.unlock();
+            pool.match();
+            sleep(1); //sleep 1s
         }
         else
         {
@@ -115,7 +140,7 @@ void consume_task()
             if (task.type == "add") pool.add(task.user);
             else if (task.type == "remove") pool.remove(task.user);
 
-            pool.match();
+            //pool.match();
         }
     }
 }
