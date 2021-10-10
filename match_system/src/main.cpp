@@ -77,38 +77,58 @@ class Pool
         {
             while (users.size() > 1)
             {
-                //auto a = users[0], b = users[1];
-                //users.erase(users.begin());
-                //users.erase(users.begin());
-
-                sort(users.begin(), users.end(), [&](User &a, User &b){
+                /*
+                 sort(users.begin(), users.end(), [&](User &a, User &b){
                         return a.score < b.score;
                         });
+                */
+
+                for (uint32_t i = 0; i < wait_times.size(); i++)
+                    wait_times[i] ++; //等待秒数 + 1
 
                 bool flag = false;
                 for (uint32_t i = 0; i < users.size() - 1; i ++)
                 {
-                    auto a = users[i], b = users[i + 1];
-                    if ( b.score - a.score <= 50 )
+                    for (uint32_t j = i + 1; j < users.size(); j ++)
                     {
-                        users.erase(users.begin() + i);
-                        users.erase(users.begin() + i);
+                        if (check_match(i, j))
+                        {
+                            auto a = users[i], b = users[j];
+                            users.erase(users.begin() + j);
+                            users.erase(users.begin() + i);
+                            wait_times.erase(wait_times.begin() + j);
+                            wait_times.erase(wait_times.begin() + i);
 
-                        save_result(a.id, b.id);
+                            save_result(a.id, b.id);
 
-                        flag = true;
-                        break;
+                            flag = true;
+
+                            break;
+                        }
                     }
+
+                    if (flag) break;
                 }
 
                 if (!flag) break;
-
             }
+        }
+
+        bool check_match(int i, int j)
+        {
+            auto a = users[i], b = users[j];
+
+            int dt = abs(a.score - b.score); //两个玩家的分值差
+            int a_max_dt = wait_times[i] * 50; // a 玩家可接受的最大分值差
+            int b_max_dt = wait_times[j] * 50; // b 玩家可接受的最大分值差
+
+            return dt <= a_max_dt && dt <= b_max_dt; // 分值差满足a,b可接受范围内，匹配出给
         }
 
         void add(User user)
         {
             users.push_back(user);
+            wait_times.push_back(0);
         }
 
         void remove(User user)
@@ -117,12 +137,14 @@ class Pool
                 if (users[i].id == user.id)
                 {
                     users.erase(users.begin() + i);
+                    wait_times.erase(wait_times.begin() + i);
                     break;
                 }
         }
 
     private:
         std::vector<User> users;
+        std::vector<int> wait_times;
 }pool;
 
 void consume_task()
@@ -162,7 +184,7 @@ class MatchHandler : virtual public MatchIf {
             printf("add_user\n");
 
             std::unique_lock<std::mutex> lck(message_queue.m);
-            message_queue.q.push({user, "add"});
+            message_queue.q.push({user, "add"}); //临界区
             message_queue.cv.notify_all();
 
             return 0;
@@ -173,7 +195,7 @@ class MatchHandler : virtual public MatchIf {
             printf("remove_user\n");
 
             std::unique_lock<std::mutex> lck(message_queue.m);
-            message_queue.q.push({user, "remove"});
+            message_queue.q.push({user, "remove"}); //临界区
             message_queue.cv.notify_all();
 
             return 0;
@@ -201,6 +223,7 @@ class MatchCloneFactory : virtual public MatchIfFactory {
 
 int main(int argc, char **argv) {
     /*
+     * TSimpleServer 只有一个线程处理客户端请求
        int port = 9090;
        ::std::shared_ptr<MatchHandler> handler(new MatchHandler());
        ::std::shared_ptr<TProcessor> processor(new MatchProcessor(handler));
@@ -210,6 +233,8 @@ int main(int argc, char **argv) {
 
        TSimpleServer server(processor, serverTransport, transportFactory, protocolFactory);
        */
+
+    // TThreadedServer 每个请求开一个线程处理,并发量高
     TThreadedServer server(
             std::make_shared<MatchProcessorFactory>(std::make_shared<MatchCloneFactory>()),
             std::make_shared<TServerSocket>(9090), //port
